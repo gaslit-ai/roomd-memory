@@ -7,8 +7,9 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { io as ioClient } from 'socket.io-client'
 import { z } from 'zod'
 
-import { brand, type RoomId, type UserId } from '../shared/identity.js'
+import type { UserId } from '../shared/identity.js'
 import { createRoomdServer, type RoomdServer } from '../server.js'
+import { brandRoomId, brandUserId } from './helpers.js'
 
 async function findFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -45,7 +46,7 @@ const TaskUpdate = z.object({
   progress: z.number().min(0).max(1).optional(),
 })
 
-const ROOM = brand<RoomId>('room-1')
+const ROOM = brandRoomId('room-1')
 
 interface SocketAck<T> {
   ok: boolean
@@ -107,12 +108,12 @@ describe('comms module smoke', () => {
           cors: { origin: '*' },
           authenticator: ({ token }) => {
             if (!token) throw new Error('missing token')
-            return { userId: brand<UserId>(token), rooms: [ROOM] }
+            return { userId: brandUserId(token), rooms: [ROOM] }
           },
         },
         mcp: {
           authenticator: ({ extra }) => ({
-            userId: brand<UserId>((extra.userId as string) ?? 'agent-1'),
+            userId: brandUserId((extra.userId as string) ?? 'agent-1'),
             rooms: [ROOM],
           }),
         },
@@ -355,5 +356,107 @@ describe('comms module smoke', () => {
       arguments: { payload: {} },
     })
     assert.equal(result.isError, true, 'unknown tool should error')
+  })
+
+  it('mcp: two transports for the same user do not share idempotency state', async () => {
+    // Regression for issue #1: pre-fix, both deriveSession calls returned
+    // SessionContext.id = claims.userId, so the dispatcher's idempotency
+    // cache key (`${session.id}:${client_msg_id}`) collided across transports
+    // and the second send returned the first send's DispatchResult instead of
+    // publishing a new message.
+    const serverA = roomd.createMcpServer()
+    const serverB = roomd.createMcpServer()
+    const [transportAServer, transportAClient] =
+      InMemoryTransport.createLinkedPair()
+    const [transportBServer, transportBClient] =
+      InMemoryTransport.createLinkedPair()
+    const clientA = new Client({ name: 'collision-a', version: '0.0.0' })
+    const clientB = new Client({ name: 'collision-b', version: '0.0.0' })
+    await Promise.all([
+      serverA.connect(transportAServer),
+      clientA.connect(transportAClient),
+      serverB.connect(transportBServer),
+      clientB.connect(transportBClient),
+    ])
+
+    try {
+      const sendArgs = {
+        payload: { body: 'collision test' },
+        client_msg_id: 'collision-key-1',
+      }
+
+      const resA = await clientA.callTool({
+        name: 'comms.send.chat.text',
+        arguments: sendArgs,
+      })
+      const resB = await clientB.callTool({
+        name: 'comms.send.chat.text',
+        arguments: sendArgs,
+      })
+
+      const sA = resA.structuredContent as Record<string, unknown>
+      const sB = resB.structuredContent as Record<string, unknown>
+
+      assert.ok(sA?.id, 'transport A returned an id')
+      assert.ok(sB?.id, 'transport B returned an id')
+      assert.notEqual(
+        sA.id,
+        sB.id,
+        'distinct transports must not share idempotency state for the same client_msg_id',
+      )
+    } finally {
+      await Promise.all([clientA.close(), clientB.close()])
+    }
+  })
+
+  it('mcp: empty userId from authenticator is rejected at the adapter boundary', async () => {
+    // Regression for issue #2: pre-fix, brand<UserId>('') silently produced
+    // an empty UserId that flowed through to WireMessage.sender. Now the MCP
+    // adapter parses claims.userId through identity.UserId, and a 0-length
+    // string fails idMinLength validation before the dispatcher is reached.
+    const badRoomd = createRoomdServer({
+      name: 'bad-userid-roomd',
+      version: '0.0.0',
+      comms: {
+        payloads: [
+          {
+            type: 'chat.text',
+            schema: ChatText,
+          },
+        ],
+        mcp: {
+          authenticator: () => ({
+            userId: '' as unknown as UserId,
+            rooms: [ROOM],
+          }),
+        },
+      },
+    })
+
+    await badRoomd.start()
+    const [serverTransport, clientTransport] =
+      InMemoryTransport.createLinkedPair()
+    const badServer = badRoomd.createMcpServer()
+    const badClient = new Client({ name: 'bad-userid-client', version: '0.0.0' })
+    await Promise.all([
+      badServer.connect(serverTransport),
+      badClient.connect(clientTransport),
+    ])
+
+    try {
+      const result = await badClient.callTool({
+        name: 'comms.send.chat.text',
+        arguments: { payload: { body: 'should not reach the bus' } },
+      })
+
+      assert.equal(
+        result.isError,
+        true,
+        'empty userId must be rejected before publishing to the bus',
+      )
+    } finally {
+      await badClient.close()
+      await badRoomd.stop()
+    }
   })
 })

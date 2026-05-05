@@ -1,9 +1,10 @@
 import { z } from 'zod'
-import { brand, type SessionId } from '../../../shared/identity'
+import type { IdentitySchemas } from '../../../shared/identity'
 import type {
   ToolAggregator,
   ToolCallExtra,
 } from '../../../tools/aggregator'
+import type { IdGenerator } from '../../core/id'
 import type { SessionContext, WireMessage } from '../../core/types'
 import { DEFAULT_COMMS_LIMITS, type CommsLimits } from '../../limits'
 import { ULID_REGEX } from '../../schemas/constants'
@@ -40,6 +41,8 @@ export interface McpToolAdapterOptions {
   readonly registry: PayloadRegistry
   readonly tools: ToolSchemas
   readonly context: AdapterContext
+  readonly identity: IdentitySchemas
+  readonly idGenerator: IdGenerator
   readonly limits?: CommsLimits
   readonly toolNames?: Partial<McpToolNames>
 }
@@ -49,6 +52,8 @@ export class McpToolAdapter {
   private readonly registry: PayloadRegistry
   private readonly toolSchemas: ToolSchemas
   private readonly context: AdapterContext
+  private readonly identity: IdentitySchemas
+  private readonly idGenerator: IdGenerator
   private readonly toolNames: McpToolNames
   private readonly limits: CommsLimits
 
@@ -57,6 +62,8 @@ export class McpToolAdapter {
     this.registry = options.registry
     this.toolSchemas = options.tools
     this.context = options.context
+    this.identity = options.identity
+    this.idGenerator = options.idGenerator
     this.toolNames = { ...DEFAULT_MCP_TOOL_NAMES, ...options.toolNames }
     this.limits = options.limits ?? DEFAULT_COMMS_LIMITS
   }
@@ -147,10 +154,22 @@ export class McpToolAdapter {
       authInfo: extra.authInfo,
       extra,
     })
+    const user = this.identity.UserId.parse(claims.userId)
+    const rooms = claims.rooms.map((r) => this.identity.RoomId.parse(r))
+    // Prefer the transport's sessionId so two MCP transports for the same user
+    // do NOT collide on the dispatcher's idempotency cache. Fall back to a
+    // fresh ULID when the transport doesn't expose one (e.g. InMemoryTransport);
+    // each tool call then gets its own session, so cross-transport client_msg_id
+    // values cannot dedupe against each other.
+    const transportSessionId =
+      typeof extra.sessionId === 'string' && extra.sessionId.length > 0
+        ? extra.sessionId
+        : this.idGenerator.next()
+    const id = this.identity.SessionId.parse(transportSessionId)
     return {
-      id: brand<SessionId>(claims.userId),
-      user: claims.userId,
-      rooms: claims.rooms,
+      id,
+      user,
+      rooms,
       emit: noopEmit,
       close: noopClose,
     }
