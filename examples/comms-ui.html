@@ -1,0 +1,489 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>roomd comms — live</title>
+<style>
+  :root {
+    --bg: #fafafa;
+    --panel: #ffffff;
+    --border: #e4e4e7;
+    --border-strong: #d4d4d8;
+    --text: #18181b;
+    --muted: #71717a;
+    --muted-2: #a1a1aa;
+    --accent: #2563eb;
+    --accent-soft: #eff6ff;
+    --ok: #16a34a;
+    --warn: #f59e0b;
+    --err: #dc2626;
+    --code-bg: #f4f4f5;
+    --row-hover: #f9fafb;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    height: 100vh;
+  }
+
+  header, footer {
+    background: var(--panel);
+    border-color: var(--border);
+    padding: 10px 14px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+  header { border-bottom: 1px solid var(--border); }
+  footer { border-top: 1px solid var(--border); }
+
+  header h1 {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    margin: 0 8px 0 0;
+    color: var(--text);
+  }
+
+  .status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--muted);
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--code-bg);
+  }
+  .status::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--muted-2);
+  }
+  .status.connected { color: var(--ok); background: #f0fdf4; }
+  .status.connected::before { background: var(--ok); }
+  .status.connecting { color: var(--warn); background: #fffbeb; }
+  .status.connecting::before { background: var(--warn); }
+  .status.error { color: var(--err); background: #fef2f2; }
+  .status.error::before { background: var(--err); }
+
+  .field { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  input[type="text"], select, textarea {
+    font: inherit;
+    color: var(--text);
+    background: var(--panel);
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    padding: 5px 8px;
+    outline: none;
+  }
+  input[type="text"]:focus, select:focus, textarea:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+  textarea {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    resize: vertical;
+    min-height: 32px;
+    width: 100%;
+  }
+
+  button {
+    font: inherit;
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    padding: 5px 12px;
+    cursor: pointer;
+  }
+  button:hover { background: var(--row-hover); }
+  button:disabled { color: var(--muted-2); cursor: not-allowed; background: var(--panel); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover { background: #1d4ed8; }
+  button.primary:disabled { background: var(--muted-2); border-color: var(--muted-2); color: #fff; }
+
+  main {
+    overflow-y: auto;
+    padding: 0;
+    background: var(--bg);
+    position: relative;
+  }
+  #feed { display: flex; flex-direction: column; }
+
+  .empty {
+    color: var(--muted);
+    padding: 32px;
+    text-align: center;
+    font-style: italic;
+  }
+
+  .row {
+    display: grid;
+    grid-template-columns: 88px 120px 160px 1fr;
+    gap: 12px;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+  }
+  .row:hover { background: var(--row-hover); }
+  .row.self { background: #fefce8; }
+  .row.self:hover { background: #fef9c3; }
+
+  .col-time {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .col-sender { font-weight: 600; font-size: 12px; }
+  .col-type {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    color: var(--accent);
+    background: var(--accent-soft);
+    padding: 1px 6px;
+    border-radius: 4px;
+    align-self: start;
+    width: fit-content;
+  }
+  .col-payload {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    color: var(--text);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .col-payload .meta {
+    color: var(--muted);
+    font-size: 11px;
+    margin-top: 4px;
+  }
+
+  .scroll-pin {
+    position: sticky;
+    bottom: 8px;
+    margin: 0 auto;
+    display: block;
+    padding: 4px 12px;
+    font-size: 11px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+    background: var(--panel);
+    border-radius: 999px;
+    z-index: 10;
+    width: fit-content;
+    visibility: hidden;
+  }
+  .scroll-pin.visible { visibility: visible; }
+
+  footer .compose {
+    display: grid;
+    grid-template-columns: 160px 1fr auto;
+    gap: 8px;
+    width: 100%;
+    align-items: start;
+  }
+  footer .hint { color: var(--muted); font-size: 11px; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>roomd comms</h1>
+    <span id="status" class="status">disconnected</span>
+    <span class="field">
+      <label for="server">server</label>
+      <input id="server" type="text" size="28" />
+    </span>
+    <span class="field">
+      <label for="token">token</label>
+      <input id="token" type="text" size="14" />
+    </span>
+    <span class="field">
+      <label for="room">room</label>
+      <input id="room" type="text" size="12" disabled title="server-configured per session" />
+    </span>
+    <button id="connect" class="primary">connect</button>
+    <button id="disconnect" disabled>disconnect</button>
+    <button id="clear">clear feed</button>
+  </header>
+
+  <main id="main">
+    <div id="feed">
+      <div class="empty" id="empty">no messages yet — connect, then send something from another client</div>
+    </div>
+    <button id="scroll-pin" class="scroll-pin" type="button">jump to latest</button>
+  </main>
+
+  <footer>
+    <div class="compose">
+      <select id="type" disabled></select>
+      <textarea id="payload" rows="1" placeholder='payload JSON, e.g. {"body":"hello"}' disabled></textarea>
+      <button id="send" class="primary" disabled>send</button>
+    </div>
+  </footer>
+
+  <script src="__SOCKETIO_URL__/socket.io/socket.io.min.js"></script>
+  <script>
+    window.__ROOMD__ = {
+      socketioUrl: "__SOCKETIO_URL__",
+      namespace: "__SOCKETIO_NAMESPACE__",
+      defaultToken: "__DEFAULT_TOKEN__",
+      defaultRoom: "__DEFAULT_ROOM__",
+      payloadTypes: __PAYLOAD_TYPES__,
+    };
+  </script>
+  <script>
+    (function () {
+      const FEED_MAX_ROWS = 500;
+      const RECV_BACKLOG_LIMIT = 100;
+      const SCROLL_BOTTOM_TOLERANCE_PX = 24;
+
+      const cfg = window.__ROOMD__;
+
+      const els = {
+        status: document.getElementById('status'),
+        server: document.getElementById('server'),
+        token: document.getElementById('token'),
+        room: document.getElementById('room'),
+        connect: document.getElementById('connect'),
+        disconnect: document.getElementById('disconnect'),
+        clear: document.getElementById('clear'),
+        feed: document.getElementById('feed'),
+        empty: document.getElementById('empty'),
+        main: document.getElementById('main'),
+        scrollPin: document.getElementById('scroll-pin'),
+        type: document.getElementById('type'),
+        payload: document.getElementById('payload'),
+        send: document.getElementById('send'),
+      };
+
+      els.server.value = cfg.socketioUrl + cfg.namespace;
+      els.token.value = cfg.defaultToken;
+      els.room.value = cfg.defaultRoom;
+      for (const t of cfg.payloadTypes) {
+        const opt = document.createElement('option');
+        opt.value = t;
+        opt.textContent = t;
+        els.type.appendChild(opt);
+      }
+
+      let socket = null;
+      let me = null;
+      let autoScroll = true;
+      let seenIds = new Set();
+
+      function setStatus(state, label) {
+        els.status.className = 'status ' + state;
+        els.status.textContent = label;
+      }
+
+      function setConnectedUi(connected) {
+        els.connect.disabled = connected;
+        els.disconnect.disabled = !connected;
+        els.send.disabled = !connected;
+        els.type.disabled = !connected;
+        els.payload.disabled = !connected;
+        els.token.disabled = connected;
+        els.server.disabled = connected;
+      }
+
+      function isAtBottom() {
+        const m = els.main;
+        return m.scrollHeight - m.scrollTop - m.clientHeight <= SCROLL_BOTTOM_TOLERANCE_PX;
+      }
+
+      function scrollToBottom() {
+        els.main.scrollTop = els.main.scrollHeight;
+      }
+
+      els.main.addEventListener('scroll', () => {
+        autoScroll = isAtBottom();
+        els.scrollPin.classList.toggle('visible', !autoScroll);
+      });
+      els.scrollPin.addEventListener('click', () => {
+        autoScroll = true;
+        els.scrollPin.classList.remove('visible');
+        scrollToBottom();
+      });
+
+      function fmtTime(iso) {
+        const d = new Date(iso);
+        if (isNaN(d.getTime())) return iso;
+        const h = String(d.getHours()).padStart(2, '0');
+        const m = String(d.getMinutes()).padStart(2, '0');
+        const s = String(d.getSeconds()).padStart(2, '0');
+        const ms = String(d.getMilliseconds()).padStart(3, '0');
+        return h + ':' + m + ':' + s + '.' + ms;
+      }
+
+      function fmtPayload(payload) {
+        try {
+          return JSON.stringify(payload, null, 2);
+        } catch {
+          return String(payload);
+        }
+      }
+
+      function appendRow(msg) {
+        if (msg && msg.id && seenIds.has(msg.id)) return;
+        if (msg && msg.id) seenIds.add(msg.id);
+
+        if (els.empty) {
+          els.empty.remove();
+          els.empty = null;
+        }
+
+        const row = document.createElement('div');
+        row.className = 'row' + (msg.sender === me ? ' self' : '');
+
+        const time = document.createElement('div');
+        time.className = 'col-time';
+        time.textContent = fmtTime(msg.ts);
+        time.title = msg.id || '';
+
+        const sender = document.createElement('div');
+        sender.className = 'col-sender';
+        sender.textContent = msg.sender || '?';
+
+        const type = document.createElement('div');
+        type.className = 'col-type';
+        type.textContent = msg.type || '?';
+
+        const payload = document.createElement('div');
+        payload.className = 'col-payload';
+        const body = document.createElement('div');
+        body.textContent = fmtPayload(msg.payload);
+        payload.appendChild(body);
+        if (msg.reply_to || msg.client_msg_id || msg.meta) {
+          const meta = document.createElement('div');
+          meta.className = 'meta';
+          const bits = [];
+          if (msg.reply_to) bits.push('reply_to=' + msg.reply_to);
+          if (msg.client_msg_id) bits.push('client_msg_id=' + msg.client_msg_id);
+          if (msg.meta) bits.push('meta=' + JSON.stringify(msg.meta));
+          meta.textContent = bits.join(' · ');
+          payload.appendChild(meta);
+        }
+
+        row.appendChild(time);
+        row.appendChild(sender);
+        row.appendChild(type);
+        row.appendChild(payload);
+        els.feed.appendChild(row);
+
+        while (els.feed.childElementCount > FEED_MAX_ROWS) {
+          els.feed.removeChild(els.feed.firstElementChild);
+        }
+        if (autoScroll) scrollToBottom();
+      }
+
+      function clearFeed() {
+        while (els.feed.firstChild) els.feed.removeChild(els.feed.firstChild);
+        seenIds = new Set();
+        const empty = document.createElement('div');
+        empty.className = 'empty';
+        empty.id = 'empty';
+        empty.textContent = 'feed cleared';
+        els.feed.appendChild(empty);
+        els.empty = empty;
+      }
+
+      function connect() {
+        if (socket) return;
+        const url = els.server.value.trim();
+        const token = els.token.value.trim();
+        if (!token) {
+          setStatus('error', 'token required');
+          return;
+        }
+        me = token;
+        setStatus('connecting', 'connecting…');
+        setConnectedUi(false);
+        els.connect.disabled = true;
+
+        socket = io(url, {
+          auth: { token },
+          transports: ['websocket'],
+          reconnection: true,
+        });
+
+        socket.on('connect', () => {
+          setStatus('connected', 'connected as ' + me);
+          setConnectedUi(true);
+          socket.emit('recv', { limit: RECV_BACKLOG_LIMIT }, (ack) => {
+            if (ack && ack.ok && Array.isArray(ack.data)) {
+              for (const m of ack.data) appendRow(m);
+            }
+          });
+        });
+
+        socket.on('message', (msg) => appendRow(msg));
+
+        socket.on('disconnect', (reason) => {
+          setStatus('connecting', 'disconnected: ' + reason);
+          setConnectedUi(false);
+        });
+
+        socket.on('connect_error', (err) => {
+          setStatus('error', 'error: ' + (err && err.message ? err.message : String(err)));
+          setConnectedUi(false);
+          els.connect.disabled = false;
+        });
+      }
+
+      function disconnect() {
+        if (!socket) return;
+        socket.removeAllListeners();
+        socket.disconnect();
+        socket = null;
+        me = null;
+        setStatus('', 'disconnected');
+        setConnectedUi(false);
+      }
+
+      function send() {
+        if (!socket) return;
+        const type = els.type.value;
+        let payload;
+        try {
+          payload = JSON.parse(els.payload.value || '{}');
+        } catch (e) {
+          setStatus('error', 'invalid JSON: ' + e.message);
+          return;
+        }
+        socket.emit('send', { type, payload }, (ack) => {
+          if (ack && ack.ok) {
+            els.payload.value = '';
+            setStatus('connected', 'connected as ' + me + ' (last send ok)');
+          } else {
+            setStatus('error', 'send rejected: ' + (ack && ack.error ? ack.error : 'unknown'));
+          }
+        });
+      }
+
+      els.connect.addEventListener('click', connect);
+      els.disconnect.addEventListener('click', disconnect);
+      els.clear.addEventListener('click', clearFeed);
+      els.send.addEventListener('click', send);
+      els.payload.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+          e.preventDefault();
+          send();
+        }
+      });
+
+      connect();
+    })();
+  </script>
+</body>
+</html>

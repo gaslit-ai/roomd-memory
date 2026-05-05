@@ -1,0 +1,19 @@
+{
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test src/__tests__/*.ts",
+    "demo:comms": "tsx examples/comms-server.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "socket.io": "^4.8.3",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "socket.io-client": "^4.8.3",
+    "tsx": "^4.21.0",
+    "typescript": "5.7"
+  }
+}

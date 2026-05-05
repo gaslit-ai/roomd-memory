@@ -1,0 +1,6 @@
+export const ULID_LENGTH = 26
+export const ULID_TIMESTAMP_LENGTH = 10
+export const ULID_RANDOM_LENGTH = 16
+export const ULID_RANDOM_BYTES = 10
+export const CROCKFORD_BASE32 = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
+export const ULID_REGEX = /^[0-9A-HJKMNP-TV-Z]{26}$/
