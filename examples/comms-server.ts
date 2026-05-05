@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
-import { brand, type RoomId, type UserId } from '../src/shared/identity'
+import type { RoomId, UserId } from '../src/shared/identity'
 import { createRoomdServer } from '../src/server'
 
 const DEFAULT_SOCKETIO_PORT = 4310
@@ -95,9 +95,11 @@ async function main(): Promise<void> {
         cors: { origin: '*' },
         authenticator: ({ token }) => {
           if (!token) throw new Error('missing auth token')
+          // Adapter parses these through identity schemas at the trust boundary,
+          // so a structural cast here is safe — invalid values throw downstream.
           return {
-            userId: brand<UserId>(token),
-            rooms: [brand<RoomId>(room)],
+            userId: token as unknown as UserId,
+            rooms: [room as unknown as RoomId],
           }
         },
       },
@@ -115,8 +117,8 @@ async function main(): Promise<void> {
             (typeof extra.userId === 'string' && extra.userId) ||
             'agent-1'
           return {
-            userId: brand<UserId>(handle),
-            rooms: [brand<RoomId>(room)],
+            userId: handle as unknown as UserId,
+            rooms: [room as unknown as RoomId],
           }
         },
       },

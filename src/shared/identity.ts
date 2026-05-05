@@ -34,7 +34,3 @@ export type User = z.infer<IdentitySchemas['User']>
 export type Room = z.infer<IdentitySchemas['Room']>
 export type Membership = z.infer<IdentitySchemas['Membership']>
 export type Session = z.infer<IdentitySchemas['Session']>
-
-export function brand<T>(value: string): T {
-  return value as unknown as T
-}

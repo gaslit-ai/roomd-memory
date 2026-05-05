@@ -5,7 +5,7 @@ import {
   type ServerOptions,
   type Socket,
 } from 'socket.io'
-import type { SessionId } from '../../../shared/identity'
+import type { IdentitySchemas } from '../../../shared/identity'
 import type { SessionContext, WireMessage } from '../../core/types'
 import type {
   AdapterContext,
@@ -33,6 +33,7 @@ export interface SocketIoAdapterOptions {
   readonly events?: Partial<SocketIoEventNames>
   readonly authenticator: Authenticator<SocketIoAuthInput>
   readonly context: AdapterContext
+  readonly identity: IdentitySchemas
 }
 
 interface InternalSocketData {
@@ -154,10 +155,11 @@ export class SocketIoAdapter implements CommsAdapter {
     claims: AuthenticatedClaims,
   ): SessionContext {
     const messageEvent = this.events.message
+    const identity = this.options.identity
     return {
-      id: socket.id as unknown as SessionId,
-      user: claims.userId,
-      rooms: claims.rooms,
+      id: identity.SessionId.parse(socket.id),
+      user: identity.UserId.parse(claims.userId),
+      rooms: claims.rooms.map((r) => identity.RoomId.parse(r)),
       emit: (msg: WireMessage) => {
         socket.emit(messageEvent, msg)
       },

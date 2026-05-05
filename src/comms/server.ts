@@ -8,7 +8,7 @@ import { SocketIoAdapter, type SocketIoAuthInput } from './adapters/socketio'
 import type { SocketIoEventNames } from './adapters/socketio/defaults'
 import type { Authenticator } from './adapters/types'
 import { Dispatcher } from './core/dispatcher'
-import type { IdGenerator } from './core/id'
+import { createUlidGenerator, type IdGenerator } from './core/id'
 import { InMemoryBus } from './core/in-memory-bus'
 import { DEFAULT_COMMS_LIMITS, type CommsLimits } from './limits'
 import { makeEnvelopeSchemas } from './schemas/envelope'
@@ -58,13 +58,15 @@ export function createCommsModule(config: CommsModuleConfig): CommsModule {
   const registry = new PayloadRegistry(envelope)
   for (const def of config.payloads) registry.register(def)
 
+  const idGenerator = config.idGenerator ?? createUlidGenerator()
+
   const bus = new InMemoryBus(commsLimits)
   const dispatcher = new Dispatcher({
     registry,
     bus,
     recvInputSchema: tools.RecvInput,
     limits: commsLimits,
-    idGenerator: config.idGenerator,
+    idGenerator,
     clock: config.clock,
   })
 
@@ -79,6 +81,7 @@ export function createCommsModule(config: CommsModuleConfig): CommsModule {
         events: config.socketio.events,
         authenticator: config.socketio.authenticator,
         context,
+        identity,
       })
     : undefined
 
@@ -88,6 +91,8 @@ export function createCommsModule(config: CommsModuleConfig): CommsModule {
         registry,
         tools,
         context,
+        identity,
+        idGenerator,
         limits: commsLimits,
         toolNames: config.mcp.toolNames,
       })
